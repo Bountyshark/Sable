@@ -1,5 +1,32 @@
 # Sable Client Changelog
 
+## 1.15.0 (2026-04-28)
+
+### Features
+
+* Reorganize Embed settings and reintroduce multiple embeds ([#667](https://github.com/SableClient/Sable/pull/667) by @nushea)
+* Change Misc. data styling in users profile pages ([#663](https://github.com/SableClient/Sable/pull/663) by @nushea)
+
+### Fixes
+
+* Add cache-control headers in Caddyfile for assets, service worker, and index.html ([#609](https://github.com/SableClient/Sable/pull/609) by @Just-Insane)
+* Fix the first pin event in a room looking empty ([#685](https://github.com/SableClient/Sable/pull/685) by @nushea)
+* Fix status sometimes sticking in member tile ([#664](https://github.com/SableClient/Sable/pull/664) by @nushea)
+* spoilered text now gets replaced with `[Spoiler]` in the plain text fallback, as per MSC4454 ([#715](https://github.com/SableClient/Sable/pull/715) by @dozro)
+* Hide copied settings links on dynamic rows ([#695](https://github.com/SableClient/Sable/pull/695) by @hazre)
+* Fix button hover background smearing in virtual list rows by suppressing transform on hover ([#614](https://github.com/SableClient/Sable/pull/614) by @Just-Insane)
+* Fix Workbox precaching by removing injectionPoint override that was silently disabling all precache entries ([#611](https://github.com/SableClient/Sable/pull/611) by @Just-Insane)
+
+#### Change how settings links are shared ([#695](https://github.com/SableClient/Sable/pull/695) by @hazre)
+
+Settings links copied from Sable now stay on the current client URL and include a small Sable marker in the link. That lets Sable recognize settings links copied from other Sable instances without treating unrelated third-party `/settings/...` links as Sable settings links.
+
+When you send a bare settings link in the composer, Sable now rewrites it into a labeled link so it looks better on non-Sable clients too. For example: `[Settings > Account > Display Name](https://client.example/settings/account?focus=display-name&moe.sable.client.action=settings)`.
+
+Invalid or malformed settings-looking links now stay normal links instead of being shown as settings chips.
+
+If you previously set `settingsLinkBaseUrl` in `config.json`, remove it. Sable now derives settings links from the runtime app URL, and the old config key is no longer used.
+
 ## 1.14.0 (2026-04-10)
 
 ### Features
