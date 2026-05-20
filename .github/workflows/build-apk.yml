@@ -1,0 +1,101 @@
+name: Build Tauri Android APK
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to build APK from"
+        required: true
+        default: "main"
+        type: string
+
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch || github.ref }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Rust Android targets
+        run: |
+          rustup target add aarch64-linux-android
+          rustup target add armv7-linux-androideabi
+          rustup target add x86_64-linux-android
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install JS dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Initialize Tauri Android project
+        run: pnpm tauri android init
+
+      - name: Build Android APK
+        env:
+          TAURI_ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
+          TAURI_ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
+        run: pnpm tauri android build --debug
+
+      - name: Locate and rename APK
+        id: apk
+        run: |
+          set -e
+          APK_PATH=$(find src-tauri/gen/android/app/build/outputs/apk -name "*.apk" | head -n 1)
+          if [ -z "$APK_PATH" ]; then
+            echo "APK not found"
+            exit 1
+          fi
+          REF_NAME="${{ github.event.inputs.branch || github.ref_name }}"
+          SAFE_REF=$(echo "$REF_NAME" | sed 's/[^a-zA-Z0-9._-]/-/g')
+          VERSION=$(grep -m 1 '^version = "' src-tauri/Cargo.toml | cut -d'"' -f2)
+          NEW_NAME="tauri-${VERSION}-${SAFE_REF}.apk"
+          mv "$APK_PATH" "$NEW_NAME"
+          echo "apk_path=$NEW_NAME" >> $GITHUB_OUTPUT
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: ${{ steps.apk.outputs.apk_path }}
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Download APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: android-apk
+
+      - name: Publish Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: "*.apk"
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
