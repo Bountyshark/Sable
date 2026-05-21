@@ -69,7 +69,8 @@ jobs:
       - name: Build Android APK
         env:
           TAURI_ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
-          TAURI_ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
+          # Update this line to use the correct variable exposed by the setup-android action:
+          TAURI_ANDROID_NDK_HOME: ${{ env.NDK_HOME }}
         run: pnpm tauri android build --debug
 
       - name: Locate and rename APK
