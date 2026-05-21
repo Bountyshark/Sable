@@ -52,7 +52,8 @@ jobs:
         run: |
           pnpm config set registry https://registry.npmjs.org/
           echo "registry=https://registry.npmjs.org/" > .npmrc
-          pnpm install --no-frozen-lockfile --force
+          pnpm install --registry=https://npmjs.org
+          
         env:
           NPM_CONFIG_REGISTRY: "https://registry.npmjs.org/"
 
