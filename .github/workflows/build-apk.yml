@@ -44,11 +44,17 @@ jobs:
           rustup target add aarch64-linux-android
           rustup target add armv7-linux-androideabi
           rustup target add x86_64-linux-android
+
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install JS dependencies
-        run: pnpm install --frozen-lockfile --resolved-deps
+      - name: Install JS dependencies (Forcing Official Registry)
+        run: |
+          pnpm config set registry https://registry.npmjs.org/
+          echo "registry=https://registry.npmjs.org/" > .npmrc
+          pnpm install --no-frozen-lockfile
+        env:
+          NPM_CONFIG_REGISTRY: "https://registry.npmjs.org/"
 
       - name: Initialize Tauri Android project
         run: pnpm tauri android init
@@ -74,6 +80,7 @@ jobs:
           NEW_NAME="tauri-${VERSION}-${SAFE_REF}.apk"
           mv "$APK_PATH" "$NEW_NAME"
           echo "apk_path=$NEW_NAME" >> $GITHUB_OUTPUT
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
