@@ -11,7 +11,6 @@ on:
         required: true
         default: "main"
         type: string
-
   push:
     tags:
       - "v*"
@@ -35,6 +34,12 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+
+      - name: Setup Java (JDK 17)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -67,16 +72,14 @@ jobs:
         run: pnpm tauri android init
 
       - name: Build Android APK
-        env:
-          TAURI_ANDROID_SDK_ROOT: $ANDROID_HOME
-          TAURI_ANDROID_NDK_HOME: $NDK_HOME
-        run: pnpm tauri android build --debug
+        run: TAURI_ANDROID_SDK_ROOT=$ANDROID_HOME TAURI_ANDROID_NDK_HOME=$NDK_HOME pnpm tauri android build --debug
 
       - name: Locate and rename APK
         id: apk
         run: |
           set -e
-          APK_PATH=$(find src-tauri/gen/android/app/build/outputs/apk -name "*.apk" | head -n 1)
+          # Fixed: Added the dot to .gen to account for Tauri's hidden directory layout
+          APK_PATH=$(find src-tauri/.gen/android/app/build/outputs/apk -name "*.apk" | head -n 1)
           if [ -z "$APK_PATH" ]; then
             echo "APK not found"
             exit 1
