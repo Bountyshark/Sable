@@ -48,7 +48,7 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Install JS dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --resolved-deps
 
       - name: Initialize Tauri Android project
         run: pnpm tauri android init
