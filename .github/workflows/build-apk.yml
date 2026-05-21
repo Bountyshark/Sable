@@ -52,6 +52,9 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # This forces the action to actually download and expose the NDK
+          ndk-version: "29.0.14206865"
 
       - name: Install JS dependencies (Rewriting Mirror URLs)
         run: |
