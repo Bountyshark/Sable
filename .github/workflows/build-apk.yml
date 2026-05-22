@@ -74,19 +74,56 @@ jobs:
       - name: Initialize Tauri Android project
         run: pnpm tauri android init
 
+      - name: Configure Gradle to use compilerOptions
+        run: |
+          # Create a gradle.properties file to set build options
+          mkdir -p src-tauri/.gradle
+          cat > src-tauri/.gradle/gradle.properties << 'EOF'
+          org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=512m
+          org.gradle.parallel=true
+          org.gradle.caching=true
+          android.useAndroidX=true
+          android.enableJetifier=true
+          EOF
+          
+          # Update build.gradle.kts to use new compilerOptions DSL
+          if [ -f "src-tauri/gen/android/app/build.gradle.kts" ]; then
+            sed -i 's/kotlinOptions {/compilerOptions {/g' src-tauri/gen/android/app/build.gradle.kts
+            sed -i 's/jvmTarget = "/jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_/g' src-tauri/gen/android/app/build.gradle.kts
+          fi
+
+      - name: Fix deprecated Gradle exec calls
+        run: |
+          if [ -f "src-tauri/gen/android/buildSrc/src/main/java/moe/sable/client/kotlin/BuildTask.kt" ]; then
+            # Replace deprecated exec() with execProcess()
+            sed -i 's/\.exec(/\.exec {/g' src-tauri/gen/android/buildSrc/src/main/java/moe/sable/client/kotlin/BuildTask.kt
+          fi
+
       - name: Build Android APK
         run: TAURI_ANDROID_SDK_ROOT=$ANDROID_HOME TAURI_ANDROID_NDK_HOME=$NDK_HOME pnpm tauri android build --debug
+        env:
+          # Additional Gradle configuration for stable builds
+          ORG_GRADLE_PROJECT_ANDROID_GRADLE_PLUGIN_VERSION: "8.1.0"
 
       - name: Locate and rename APK
         id: apk
         run: |
           set -e
           # Fixed: Added the dot to .gen to account for Tauri's hidden directory layout
-          APK_PATH=$(find src-tauri/.gen/android/app/build/outputs/apk -name "*.apk" | head -n 1)
+          APK_PATH=$(find src-tauri/.gen/android/app/build/outputs/apk -name "*.apk" 2>/dev/null | head -n 1)
+          
           if [ -z "$APK_PATH" ]; then
-            echo "APK not found"
+            # Fallback search paths if .gen directory naming differs
+            APK_PATH=$(find src-tauri -path "*/app/build/outputs/apk*" -name "*.apk" 2>/dev/null | head -n 1)
+          fi
+          
+          if [ -z "$APK_PATH" ]; then
+            echo "APK not found in expected locations"
+            find src-tauri -name "*.apk" -type f 2>/dev/null || echo "No APK files found anywhere"
             exit 1
           fi
+          
+          echo "Found APK at: $APK_PATH"
           REF_NAME="${{ github.event.inputs.branch || github.ref_name }}"
           SAFE_REF=$(echo "$REF_NAME" | sed 's/[^a-zA-Z0-9._-]/-/g')
           VERSION=$(grep -m 1 '^version = "' src-tauri/Cargo.toml | cut -d'"' -f2)
