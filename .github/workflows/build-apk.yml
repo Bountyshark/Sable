@@ -79,7 +79,6 @@ jobs:
           android.useAndroidX=true
           android.enableJetifier=true
           org.gradle.logging.level=debug
-          org.gradle.debug=false
           EOF
 
       - name: Remove old Android project
@@ -88,26 +87,14 @@ jobs:
       - name: Initialize Tauri Android project
         run: pnpm tauri android init
 
-      - name: Build Android APK with full debug output
+      - name: Build Android APK with debug output
         run: |
           export TAURI_ANDROID_SDK_ROOT=$ANDROID_HOME
           export TAURI_ANDROID_NDK_HOME=$NDK_HOME
           export RUST_BACKTRACE=full
           export RUST_LOG=debug
-          pnpm tauri android build --debug -- \
-            --warning-mode all \
-            --info \
-            --debug \
-            2>&1 | tee build-full.log
+          pnpm tauri android build --debug 2>&1 | tee build-full.log
         continue-on-error: true
-
-      - name: Show Gradle problems report
-        if: always()
-        run: |
-          if [ -f "src-tauri/gen/android/build/reports/problems/problems-report.html" ]; then
-            echo "=== GRADLE PROBLEMS REPORT ==="
-            cat src-tauri/gen/android/build/reports/problems/problems-report.html
-          fi
 
       - name: Show last 500 lines of build output
         if: always()
@@ -128,6 +115,7 @@ jobs:
         with:
           name: gradle-reports
           path: src-tauri/gen/android/build/reports/
+          if-no-files-found: ignore
 
       - name: Locate and rename APK
         id: apk
