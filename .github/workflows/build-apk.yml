@@ -49,77 +49,56 @@ jobs:
           rustup target add aarch64-linux-android
           rustup target add armv7-linux-androideabi
           rustup target add x86_64-linux-android
+          rustup target add i686-linux-android
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
-          # This forces the action to actually download and expose the NDK
           ndk-version: "29.0.14206865"
 
-      - name: Install JS dependencies (Rewriting Mirror URLs)
+      - name: Install JS dependencies
         run: |
-          # Automatically replace all mirror domains inside the lockfile text dynamically
+          # Fix npm registry mirrors
           sed -i 's|https://mirror2.chabokan.net/npm|https://registry.npmjs.org|g' pnpm-lock.yaml
           sed -i 's|https://npm.chabokan.net|https://registry.npmjs.org|g' pnpm-lock.yaml
           
-          # Force the environment baseline configs
+          # Install with npm registry
           pnpm config set registry https://registry.npmjs.org/
           echo "registry=https://registry.npmjs.org/" > .npmrc
-          
-          # Install using the newly cleaned lockfile
           pnpm install --no-frozen-lockfile
         env:
           NPM_CONFIG_REGISTRY: "https://registry.npmjs.org/"
 
-      - name: Initialize Tauri Android project
-        run: pnpm tauri android init
-
-      - name: Configure Gradle to use compilerOptions
+      - name: Configure Gradle properties
         run: |
-          # Create a gradle.properties file to set build options
-          mkdir -p src-tauri/.gradle
-          cat > src-tauri/.gradle/gradle.properties << 'EOF'
+          mkdir -p $HOME/.gradle
+          cat > $HOME/.gradle/gradle.properties << 'EOF'
           org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=512m
           org.gradle.parallel=true
           org.gradle.caching=true
           android.useAndroidX=true
           android.enableJetifier=true
+          org.gradle.configuration-cache=true
           EOF
-          
-          # Update build.gradle.kts to use new compilerOptions DSL
-          if [ -f "src-tauri/gen/android/app/build.gradle.kts" ]; then
-            sed -i 's/kotlinOptions {/compilerOptions {/g' src-tauri/gen/android/app/build.gradle.kts
-            sed -i 's/jvmTarget = "/jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_/g' src-tauri/gen/android/app/build.gradle.kts
-          fi
 
-      - name: Fix deprecated Gradle exec calls
-        run: |
-          if [ -f "src-tauri/gen/android/buildSrc/src/main/java/moe/sable/client/kotlin/BuildTask.kt" ]; then
-            # Replace deprecated exec() with execProcess()
-            sed -i 's/\.exec(/\.exec {/g' src-tauri/gen/android/buildSrc/src/main/java/moe/sable/client/kotlin/BuildTask.kt
-          fi
+      - name: Remove old Android project
+        run: rm -rf src-tauri/gen/android
+
+      - name: Initialize Tauri Android project
+        run: pnpm tauri android init
 
       - name: Build Android APK
         run: TAURI_ANDROID_SDK_ROOT=$ANDROID_HOME TAURI_ANDROID_NDK_HOME=$NDK_HOME pnpm tauri android build --debug
-        env:
-          # Additional Gradle configuration for stable builds
-          ORG_GRADLE_PROJECT_ANDROID_GRADLE_PLUGIN_VERSION: "8.1.0"
 
       - name: Locate and rename APK
         id: apk
         run: |
           set -e
-          # Fixed: Added the dot to .gen to account for Tauri's hidden directory layout
           APK_PATH=$(find src-tauri/.gen/android/app/build/outputs/apk -name "*.apk" 2>/dev/null | head -n 1)
           
           if [ -z "$APK_PATH" ]; then
-            # Fallback search paths if .gen directory naming differs
-            APK_PATH=$(find src-tauri -path "*/app/build/outputs/apk*" -name "*.apk" 2>/dev/null | head -n 1)
-          fi
-          
-          if [ -z "$APK_PATH" ]; then
-            echo "APK not found in expected locations"
-            find src-tauri -name "*.apk" -type f 2>/dev/null || echo "No APK files found anywhere"
+            echo "APK not found, searching all locations..."
+            find src-tauri -name "*.apk" -type f 2>/dev/null || true
             exit 1
           fi
           
