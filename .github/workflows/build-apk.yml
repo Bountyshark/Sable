@@ -2,6 +2,8 @@ name: Build Tauri Android APK
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  ACTIONS_RUNNER_DEBUG: true
+  ACTIONS_STEP_DEBUG: true
 
 on:
   workflow_dispatch:
@@ -58,27 +60,26 @@ jobs:
 
       - name: Install JS dependencies
         run: |
-          # Fix npm registry mirrors
           sed -i 's|https://mirror2.chabokan.net/npm|https://registry.npmjs.org|g' pnpm-lock.yaml
           sed -i 's|https://npm.chabokan.net|https://registry.npmjs.org|g' pnpm-lock.yaml
-          
-          # Install with npm registry
           pnpm config set registry https://registry.npmjs.org/
           echo "registry=https://registry.npmjs.org/" > .npmrc
           pnpm install --no-frozen-lockfile
         env:
           NPM_CONFIG_REGISTRY: "https://registry.npmjs.org/"
 
-      - name: Configure Gradle properties
+      - name: Configure Gradle properties with debug
         run: |
           mkdir -p $HOME/.gradle
           cat > $HOME/.gradle/gradle.properties << 'EOF'
           org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=512m
           org.gradle.parallel=true
-          org.gradle.caching=true
+          org.gradle.caching=false
+          org.gradle.configuration-cache=false
           android.useAndroidX=true
           android.enableJetifier=true
-          org.gradle.configuration-cache=true
+          org.gradle.logging.level=debug
+          org.gradle.debug=false
           EOF
 
       - name: Remove old Android project
@@ -87,8 +88,46 @@ jobs:
       - name: Initialize Tauri Android project
         run: pnpm tauri android init
 
-      - name: Build Android APK
-        run: TAURI_ANDROID_SDK_ROOT=$ANDROID_HOME TAURI_ANDROID_NDK_HOME=$NDK_HOME pnpm tauri android build --debug
+      - name: Build Android APK with full debug output
+        run: |
+          export TAURI_ANDROID_SDK_ROOT=$ANDROID_HOME
+          export TAURI_ANDROID_NDK_HOME=$NDK_HOME
+          export RUST_BACKTRACE=full
+          export RUST_LOG=debug
+          pnpm tauri android build --debug -- \
+            --warning-mode all \
+            --info \
+            --debug \
+            2>&1 | tee build-full.log
+        continue-on-error: true
+
+      - name: Show Gradle problems report
+        if: always()
+        run: |
+          if [ -f "src-tauri/gen/android/build/reports/problems/problems-report.html" ]; then
+            echo "=== GRADLE PROBLEMS REPORT ==="
+            cat src-tauri/gen/android/build/reports/problems/problems-report.html
+          fi
+
+      - name: Show last 500 lines of build output
+        if: always()
+        run: |
+          echo "=== LAST 500 LINES OF BUILD OUTPUT ==="
+          tail -500 build-full.log
+
+      - name: Upload full build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-full-log
+          path: build-full.log
+
+      - name: Upload gradle reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-reports
+          path: src-tauri/gen/android/build/reports/
 
       - name: Locate and rename APK
         id: apk
@@ -97,12 +136,10 @@ jobs:
           APK_PATH=$(find src-tauri/.gen/android/app/build/outputs/apk -name "*.apk" 2>/dev/null | head -n 1)
           
           if [ -z "$APK_PATH" ]; then
-            echo "APK not found, searching all locations..."
-            find src-tauri -name "*.apk" -type f 2>/dev/null || true
+            echo "APK not found"
             exit 1
           fi
           
-          echo "Found APK at: $APK_PATH"
           REF_NAME="${{ github.event.inputs.branch || github.ref_name }}"
           SAFE_REF=$(echo "$REF_NAME" | sed 's/[^a-zA-Z0-9._-]/-/g')
           VERSION=$(grep -m 1 '^version = "' src-tauri/Cargo.toml | cut -d'"' -f2)
