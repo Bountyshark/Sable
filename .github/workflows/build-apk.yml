@@ -1,3 +1,4 @@
+```yaml id="yea5lm"
 name: Build Tauri Android APK
 
 on:
@@ -34,9 +35,6 @@ jobs:
 
       # ============================================================
       # PNPM
-      # IMPORTANT:
-      # Do NOT specify version here because package.json already
-      # defines packageManager: pnpm@x.x.x
       # ============================================================
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -53,7 +51,7 @@ jobs:
       # ============================================================
       # Java
       # ============================================================
-      - name: Setup Java (JDK 17)
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: zulu
@@ -84,8 +82,7 @@ jobs:
           ndk-version: "29.0.14206865"
 
       # ============================================================
-      # Export NDK_HOME manually
-      # setup-android installs the NDK but may not export NDK_HOME
+      # Export NDK path
       # ============================================================
       - name: Export Android NDK path
         run: |
@@ -99,14 +96,12 @@ jobs:
           echo "ANDROID_HOME=$ANDROID_HOME"
           echo "NDK_HOME=$NDK_HOME"
 
-          echo "=== SDK ROOT ==="
+          echo "=== SDK ==="
           ls -la $ANDROID_HOME
 
-          echo "=== AVAILABLE NDKS ==="
-          ls -la $ANDROID_HOME/ndk || true
-
-          echo "=== SELECTED NDK ==="
-          ls -la $NDK_HOME || true
+          echo "=== NDK ==="
+          ls -la $ANDROID_HOME/ndk
+          ls -la $NDK_HOME
 
       # ============================================================
       # Install JS dependencies
@@ -119,7 +114,6 @@ jobs:
           sed -i 's|https://npm.chabokan.net|https://registry.npmjs.org|g' pnpm-lock.yaml || true
 
           pnpm config set registry https://registry.npmjs.org/
-
           echo "registry=https://registry.npmjs.org/" > .npmrc
 
           pnpm install --no-frozen-lockfile
@@ -145,30 +139,22 @@ jobs:
           EOF
 
       # ============================================================
-      # Clean old generated Android project
-      # Tauri v2 uses .gen not gen
+      # Remove ALL stale generated Android projects
       # ============================================================
-      - name: Remove old Android project
-        run: rm -rf src-tauri/.gen/android
+      - name: Remove stale generated Android projects
+        run: |
+          rm -rf src-tauri/gen
+          rm -rf src-tauri/.gen
+          rm -rf src-tauri/target
 
       # ============================================================
-      # Initialize Android project
+      # Initialize fresh Android project
       # ============================================================
-      - name: Initialize Tauri Android project
+      - name: Initialize Android project
         run: pnpm tauri android init
 
       # ============================================================
-      # Verify generated structure
-      # ============================================================
-      - name: Verify generated Android project
-        run: |
-          echo "=== GENERATED STRUCTURE ==="
-          find src-tauri/.gen -maxdepth 3 -type d || true
-
-      # ============================================================
       # Build APK
-      # IMPORTANT:
-      # Use env: block instead of inline export
       # ============================================================
       - name: Build Android APK
         run: |
@@ -180,16 +166,15 @@ jobs:
           RUST_LOG: debug
 
       # ============================================================
-      # Show logs if build fails
+      # Show logs on failure
       # ============================================================
       - name: Show last 500 lines of build output
         if: failure()
         run: |
-          echo "=== LAST 500 LINES OF BUILD OUTPUT ==="
           tail -500 build-full.log || true
 
       # ============================================================
-      # Upload build log
+      # Upload logs
       # ============================================================
       - name: Upload full build log
         if: always()
@@ -200,27 +185,14 @@ jobs:
           if-no-files-found: ignore
 
       # ============================================================
-      # Upload Gradle reports
-      # ============================================================
-      - name: Upload Gradle reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: gradle-reports
-          path: |
-            src-tauri/.gen/android/build/reports/
-            src-tauri/.gen/android/app/build/reports/
-          if-no-files-found: ignore
-
-      # ============================================================
       # Locate APK
       # ============================================================
-      - name: Locate and rename APK
+      - name: Locate APK
         id: apk
         run: |
           set -e
 
-          APK_PATH=$(find src-tauri/.gen/android/app/build/outputs/apk -name "*.apk" | head -n 1)
+          APK_PATH=$(find src-tauri/gen/android/app/build/outputs/apk -name "*.apk" | head -n 1)
 
           if [ -z "$APK_PATH" ]; then
             echo "APK not found"
@@ -247,9 +219,6 @@ jobs:
           name: android-apk
           path: ${{ steps.apk.outputs.apk_path }}
 
-  # ============================================================
-  # Release Job
-  # ============================================================
   release:
     name: Create GitHub Release
     needs: build
@@ -269,3 +238,4 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
