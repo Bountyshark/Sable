@@ -1,10 +1,5 @@
 name: Build Tauri Android APK
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  ACTIONS_RUNNER_DEBUG: true
-  ACTIONS_STEP_DEBUG: true
-
 on:
   workflow_dispatch:
     inputs:
@@ -13,9 +8,15 @@ on:
         required: true
         default: "main"
         type: string
+
   push:
     tags:
       - "v*"
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  ACTIONS_RUNNER_DEBUG: true
+  ACTIONS_STEP_DEBUG: true
 
 jobs:
   build:
@@ -23,29 +24,49 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # ------------------------------------------------------------
+      # Checkout
+      # ------------------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.branch || github.ref }}
 
+      # ------------------------------------------------------------
+      # PNPM
+      # ------------------------------------------------------------
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
+        with:
+          version: latest
 
+      # ------------------------------------------------------------
+      # Node.js
+      # ------------------------------------------------------------
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
 
+      # ------------------------------------------------------------
+      # Java
+      # ------------------------------------------------------------
       - name: Setup Java (JDK 17)
         uses: actions/setup-java@v4
         with:
-          distribution: 'zulu'
-          java-version: '17'
+          distribution: zulu
+          java-version: "17"
 
+      # ------------------------------------------------------------
+      # Rust
+      # ------------------------------------------------------------
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      # ------------------------------------------------------------
+      # Rust Android Targets
+      # ------------------------------------------------------------
       - name: Install Rust Android targets
         run: |
           rustup target add aarch64-linux-android
@@ -53,94 +74,181 @@ jobs:
           rustup target add x86_64-linux-android
           rustup target add i686-linux-android
 
+      # ------------------------------------------------------------
+      # Android SDK + NDK
+      # ------------------------------------------------------------
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
           ndk-version: "29.0.14206865"
 
-      - name: Install JS dependencies
+      # ------------------------------------------------------------
+      # Export NDK path manually
+      # setup-android installs the NDK but may not export NDK_HOME
+      # ------------------------------------------------------------
+      - name: Export Android NDK path
         run: |
-          sed -i 's|https://mirror2.chabokan.net/npm|https://registry.npmjs.org|g' pnpm-lock.yaml
-          sed -i 's|https://npm.chabokan.net|https://registry.npmjs.org|g' pnpm-lock.yaml
-          pnpm config set registry https://registry.npmjs.org/
-          echo "registry=https://registry.npmjs.org/" > .npmrc
-          pnpm install --no-frozen-lockfile
+          echo "NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> $GITHUB_ENV
+
+      # ------------------------------------------------------------
+      # Verify Android environment
+      # ------------------------------------------------------------
+      - name: Verify Android environment
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "NDK_HOME=$NDK_HOME"
+
+          echo "=== SDK ROOT ==="
+          ls -la $ANDROID_HOME
+
+          echo "=== AVAILABLE NDKS ==="
+          ls -la $ANDROID_HOME/ndk || true
+
+          echo "=== SELECTED NDK ==="
+          ls -la $NDK_HOME || true
+
+      # ------------------------------------------------------------
+      # Install JS dependencies
+      # ------------------------------------------------------------
+      - name: Install JS dependencies
         env:
           NPM_CONFIG_REGISTRY: "https://registry.npmjs.org/"
+        run: |
+          sed -i 's|https://mirror2.chabokan.net/npm|https://registry.npmjs.org|g' pnpm-lock.yaml || true
+          sed -i 's|https://npm.chabokan.net|https://registry.npmjs.org|g' pnpm-lock.yaml || true
 
-      - name: Configure Gradle properties with debug
+          pnpm config set registry https://registry.npmjs.org/
+
+          echo "registry=https://registry.npmjs.org/" > .npmrc
+
+          pnpm install --no-frozen-lockfile
+
+      # ------------------------------------------------------------
+      # Gradle configuration
+      # ------------------------------------------------------------
+      - name: Configure Gradle properties
         run: |
           mkdir -p $HOME/.gradle
+
           cat > $HOME/.gradle/gradle.properties << 'EOF'
-          org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=512m
+          org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m -Dfile.encoding=UTF-8
           org.gradle.parallel=true
-          org.gradle.caching=false
+          org.gradle.caching=true
           org.gradle.configuration-cache=false
+
           android.useAndroidX=true
           android.enableJetifier=true
-          org.gradle.logging.level=debug
+
+          kotlin.incremental=false
+          org.gradle.daemon=false
           EOF
 
+      # ------------------------------------------------------------
+      # Clean old generated Android project
+      # Tauri v2 uses .gen not gen
+      # ------------------------------------------------------------
       - name: Remove old Android project
-        run: rm -rf src-tauri/gen/android
+        run: rm -rf src-tauri/.gen/android
 
+      # ------------------------------------------------------------
+      # Initialize Android project
+      # ------------------------------------------------------------
       - name: Initialize Tauri Android project
         run: pnpm tauri android init
 
-      - name: Build Android APK with debug output
+      # ------------------------------------------------------------
+      # Verify generated structure
+      # ------------------------------------------------------------
+      - name: Verify generated Android project
         run: |
-          export TAURI_ANDROID_SDK_ROOT=$ANDROID_HOME
-          export TAURI_ANDROID_NDK_HOME=$NDK_HOME
-          export RUST_BACKTRACE=full
-          export RUST_LOG=debug
-          pnpm tauri android build --debug 2>&1 | tee build-full.log
-        continue-on-error: true
+          echo "=== GENERATED STRUCTURE ==="
+          find src-tauri/.gen -maxdepth 3 -type d || true
 
+      # ------------------------------------------------------------
+      # Build APK
+      # IMPORTANT:
+      # Use env: block instead of inline exports
+      # ------------------------------------------------------------
+      - name: Build Android APK
+        run: |
+          pnpm tauri android build --debug 2>&1 | tee build-full.log
+        env:
+          TAURI_ANDROID_SDK_ROOT: ${{ env.ANDROID_HOME }}
+          TAURI_ANDROID_NDK_HOME: ${{ env.NDK_HOME }}
+          RUST_BACKTRACE: full
+          RUST_LOG: debug
+
+      # ------------------------------------------------------------
+      # Show logs if build fails
+      # ------------------------------------------------------------
       - name: Show last 500 lines of build output
-        if: always()
+        if: failure()
         run: |
           echo "=== LAST 500 LINES OF BUILD OUTPUT ==="
-          tail -500 build-full.log
+          tail -500 build-full.log || true
 
+      # ------------------------------------------------------------
+      # Upload full logs
+      # ------------------------------------------------------------
       - name: Upload full build log
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: build-full-log
           path: build-full.log
+          if-no-files-found: ignore
 
-      - name: Upload gradle reports
+      # ------------------------------------------------------------
+      # Upload Gradle reports
+      # ------------------------------------------------------------
+      - name: Upload Gradle reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: gradle-reports
-          path: src-tauri/gen/android/build/reports/
+          path: |
+            src-tauri/.gen/android/build/reports/
+            src-tauri/.gen/android/app/build/reports/
           if-no-files-found: ignore
 
+      # ------------------------------------------------------------
+      # Locate APK
+      # ------------------------------------------------------------
       - name: Locate and rename APK
         id: apk
         run: |
           set -e
-          APK_PATH=$(find src-tauri/.gen/android/app/build/outputs/apk -name "*.apk" 2>/dev/null | head -n 1)
-          
+
+          APK_PATH=$(find src-tauri/.gen/android/app/build/outputs/apk -name "*.apk" | head -n 1)
+
           if [ -z "$APK_PATH" ]; then
             echo "APK not found"
             exit 1
           fi
-          
+
           REF_NAME="${{ github.event.inputs.branch || github.ref_name }}"
           SAFE_REF=$(echo "$REF_NAME" | sed 's/[^a-zA-Z0-9._-]/-/g')
+
           VERSION=$(grep -m 1 '^version = "' src-tauri/Cargo.toml | cut -d'"' -f2)
+
           NEW_NAME="tauri-${VERSION}-${SAFE_REF}.apk"
+
           mv "$APK_PATH" "$NEW_NAME"
+
           echo "apk_path=$NEW_NAME" >> $GITHUB_OUTPUT
 
+      # ------------------------------------------------------------
+      # Upload APK
+      # ------------------------------------------------------------
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: android-apk
           path: ${{ steps.apk.outputs.apk_path }}
 
+  # ============================================================
+  # Release Job
+  # ============================================================
   release:
     name: Create GitHub Release
     needs: build
