@@ -1,3 +1,4 @@
+```yaml
 name: Build Tauri Android APK
 
 on:
@@ -39,7 +40,7 @@ jobs:
         uses: pnpm/action-setup@v4
 
       # ============================================================
-      # Node.js
+      # Node.js 24
       # ============================================================
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -48,7 +49,7 @@ jobs:
           cache: pnpm
 
       # ============================================================
-      # Java
+      # Java 17
       # ============================================================
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -63,7 +64,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       # ============================================================
-      # Rust Android Targets
+      # Android Rust targets
       # ============================================================
       - name: Install Rust Android targets
         run: |
@@ -83,9 +84,11 @@ jobs:
       # ============================================================
       # Export NDK path
       # ============================================================
-      - name: Export Android NDK path
+      - name: Export Android environment
         run: |
           echo "NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> $GITHUB_ENV
+          echo "TAURI_ANDROID_SDK_ROOT=$ANDROID_HOME" >> $GITHUB_ENV
+          echo "TAURI_ANDROID_NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> $GITHUB_ENV
 
       # ============================================================
       # Verify Android environment
@@ -113,6 +116,7 @@ jobs:
           sed -i 's|https://npm.chabokan.net|https://registry.npmjs.org|g' pnpm-lock.yaml || true
 
           pnpm config set registry https://registry.npmjs.org/
+
           echo "registry=https://registry.npmjs.org/" > .npmrc
 
           pnpm install --no-frozen-lockfile
@@ -120,14 +124,14 @@ jobs:
       # ============================================================
       # Configure Gradle
       # ============================================================
-      - name: Configure Gradle properties
+      - name: Configure Gradle
         run: |
           mkdir -p $HOME/.gradle
 
           cat > $HOME/.gradle/gradle.properties << 'EOF'
           org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m -Dfile.encoding=UTF-8
           org.gradle.parallel=true
-          org.gradle.caching=true
+          org.gradle.caching=false
           org.gradle.configuration-cache=false
 
           android.useAndroidX=true
@@ -138,19 +142,40 @@ jobs:
           EOF
 
       # ============================================================
-      # Remove ALL stale generated Android projects
+      # Remove stale Android + Gradle caches
       # ============================================================
-      - name: Remove stale generated Android projects
+      - name: Remove stale Android + Gradle caches
         run: |
           rm -rf src-tauri/gen
           rm -rf src-tauri/.gen
           rm -rf src-tauri/target
 
+          rm -rf ~/.gradle/caches
+          rm -rf ~/.gradle/wrapper
+
       # ============================================================
-      # Initialize fresh Android project
+      # Initialize Android project
       # ============================================================
       - name: Initialize Android project
         run: pnpm tauri android init
+
+      # ============================================================
+      # Force Kotlin 2.2.0 everywhere
+      # ============================================================
+      - name: Force Kotlin 2.2.0 everywhere
+        run: |
+          find src-tauri/gen/android -name "*.gradle.kts" -type f -exec \
+            sed -i 's/kotlin-gradle-plugin:1\.[0-9.]*/kotlin-gradle-plugin:2.2.0/g' {} +
+
+          find src-tauri/gen/android -name "*.gradle.kts" -type f -exec \
+            sed -i 's/kotlin("android") version "1\.[0-9.]*"/kotlin("android") version "2.2.0"/g' {} +
+
+      # ============================================================
+      # Show Kotlin versions
+      # ============================================================
+      - name: Show Kotlin versions
+        run: |
+          grep -R "kotlin" src-tauri/gen/android || true
 
       # ============================================================
       # Build APK
@@ -159,21 +184,19 @@ jobs:
         run: |
           pnpm tauri android build --debug 2>&1 | tee build-full.log
         env:
-          TAURI_ANDROID_SDK_ROOT: ${{ env.ANDROID_HOME }}
-          TAURI_ANDROID_NDK_HOME: ${{ env.NDK_HOME }}
           RUST_BACKTRACE: full
           RUST_LOG: debug
 
       # ============================================================
-      # Show logs on failure
+      # Show build log on failure
       # ============================================================
-      - name: Show last 500 lines of build output
+      - name: Show last 500 lines
         if: failure()
         run: |
           tail -500 build-full.log || true
 
       # ============================================================
-      # Upload logs
+      # Upload full build log
       # ============================================================
       - name: Upload full build log
         if: always()
@@ -181,6 +204,17 @@ jobs:
         with:
           name: build-full-log
           path: build-full.log
+          if-no-files-found: ignore
+
+      # ============================================================
+      # Upload Gradle reports
+      # ============================================================
+      - name: Upload Gradle reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-reports
+          path: src-tauri/gen/android/build/reports/
           if-no-files-found: ignore
 
       # ============================================================
@@ -237,3 +271,4 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
