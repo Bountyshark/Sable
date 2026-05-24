@@ -16,7 +16,7 @@ import {
 } from 'folds';
 import type { IContent, MatrixEvent, Room } from '$types/matrix-sdk';
 import { getMemberDisplayName } from '$utils/room';
-import { getMxIdLocalPart } from '$utils/matrix';
+import { getMxIdLocalPart, mxcUrlToHttp } from '$utils/matrix';
 import { useMatrixClient } from '$hooks/useMatrixClient';
 import { useMediaAuthentication } from '$hooks/useMediaAuthentication';
 import { useOpenUserRoomProfile } from '$state/hooks/userRoomProfile';
@@ -64,7 +64,7 @@ export const EventHistory = as<'div', EventHistoryProps>(
     const name = getName(readerId ?? '');
     const avatarMxcUrl = room.getMember(readerId ?? '')?.getMxcAvatarUrl();
     const avatarUrl = avatarMxcUrl
-      ? mx.mxcUrlToHttp(avatarMxcUrl, 100, 100, 'crop', undefined, false, useAuthentication)
+      ? mxcUrlToHttp(mx, avatarMxcUrl, useAuthentication, 100, 100, 'crop', false)
       : undefined;
 
     const [hour24Clock] = useSetting(settingsAtom, 'hour24Clock');

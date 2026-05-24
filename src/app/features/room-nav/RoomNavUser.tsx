@@ -5,7 +5,7 @@ import type { Room, CallMembership } from '$types/matrix-sdk';
 import { NavButton, NavItem, NavItemContent } from '$components/nav';
 import { UserAvatar } from '$components/user-avatar';
 import { useMatrixClient } from '$hooks/useMatrixClient';
-import { getMxIdLocalPart } from '$utils/matrix';
+import { getMxIdLocalPart, mxcUrlToHttp } from '$utils/matrix';
 import { getMemberAvatarMxc, getMemberDisplayName } from '$utils/room';
 import { useMediaAuthentication } from '$hooks/useMediaAuthentication';
 import { useOpenUserRoomProfile } from '$state/hooks/userRoomProfile';
@@ -31,7 +31,7 @@ export function RoomNavUser({ room, callMembership, hideText }: RoomNavUserProps
   const userId = callMembership.sender ?? '';
   const avatarMxcUrl = getMemberAvatarMxc(room, userId);
   const avatarUrl = avatarMxcUrl
-    ? mx.mxcUrlToHttp(avatarMxcUrl, 32, 32, 'crop', undefined, false, useAuthentication)
+    ? mxcUrlToHttp(mx, avatarMxcUrl, useAuthentication, 32, 32, 'crop', false)
     : undefined;
   const nicknames = useAtomValue(nicknamesAtom);
   const name = getMemberDisplayName(room, userId, nicknames) ?? getMxIdLocalPart(userId);

@@ -31,6 +31,7 @@ import {
 import type { IRoomCreateContent, RoomToParents, UnreadInfo } from '$types/matrix/room';
 import { NotificationType } from '$types/matrix/room';
 import * as Sentry from '@sentry/react';
+import { mxcUrlToHttp } from './matrix';
 
 export const getStateEvent = (
   room: Room,
@@ -486,10 +487,7 @@ export const getRoomAvatarUrl = (
   useAuthentication = false
 ): string | undefined => {
   const mxcUrl = room.getMxcAvatarUrl();
-  return mxcUrl
-    ? (mx.mxcUrlToHttp(mxcUrl, size, size, 'crop', undefined, false, useAuthentication) ??
-        undefined)
-    : undefined;
+  return mxcUrl ? (mxcUrlToHttp(mx, mxcUrl, useAuthentication, size, size, 'crop', false) ?? undefined) : undefined;
 };
 
 export const getDirectRoomAvatarUrl = (
@@ -504,9 +502,7 @@ export const getDirectRoomAvatarUrl = (
     return getRoomAvatarUrl(mx, room, size, useAuthentication);
   }
 
-  return (
-    mx.mxcUrlToHttp(mxcUrl, size, size, 'crop', undefined, false, useAuthentication) ?? undefined
-  );
+  return mxcUrlToHttp(mx, mxcUrl, useAuthentication, size, size, 'crop', false) ?? undefined;
 };
 
 export const trimReplyFromBody = (body: string): string => {

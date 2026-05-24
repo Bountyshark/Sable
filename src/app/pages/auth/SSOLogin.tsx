@@ -3,6 +3,7 @@ import type { IIdentityProvider, SSOAction } from '$types/matrix-sdk';
 import { createClient } from '$types/matrix-sdk';
 import { useMemo } from 'react';
 import { useAutoDiscoveryInfo } from '$hooks/useAutoDiscoveryInfo';
+import { mxcUrlToHttp } from '$utils/matrix';
 
 type SSOLoginProps = {
   providers?: IIdentityProvider[];
@@ -20,7 +21,7 @@ export function SSOLogin({ providers, redirectUrl, action, saveScreenSpace }: SS
 
   const withoutIcon = providers
     ? providers.find(
-        (provider) => !provider.icon || !mx.mxcUrlToHttp(provider.icon, 96, 96, 'crop', false)
+        (provider) => !provider.icon || !mxcUrlToHttp(mx, provider.icon, false, 96, 96, 'crop', false)
       )
     : true;
 
@@ -31,7 +32,7 @@ export function SSOLogin({ providers, redirectUrl, action, saveScreenSpace }: SS
       {providers ? (
         providers.map((provider) => {
           const { id, name, icon } = provider;
-          const iconUrl = icon && mx.mxcUrlToHttp(icon, 96, 96, 'crop', false);
+          const iconUrl = icon && mxcUrlToHttp(mx, icon, false, 96, 96, 'crop', false);
 
           const buttonTitle = `Continue with ${name}`;
 

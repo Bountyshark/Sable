@@ -20,6 +20,9 @@ const isMac = result.os.name === 'Mac OS';
 export const ua = () => result;
 export const isMacOS = () => isMac;
 export const mobileOrTablet = () => isMobileOrTablet;
+export const isAndroid = () => result.os.name === 'Android';
+export const isTauri = () => window.location.origin === 'http://tauri.localhost';
+export const isAndroidTauri = () => isAndroid() && isTauri();
 
 export const deviceDisplayName = (): string => {
   const browser = result.browser.name;

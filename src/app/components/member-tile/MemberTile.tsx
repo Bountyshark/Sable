@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { as, Avatar, Box, Icon, Icons, Text } from 'folds';
 import type { MatrixClient, Room, RoomMember } from '$types/matrix-sdk';
 import { getMemberDisplayName } from '$utils/room';
-import { getMxIdLocalPart } from '$utils/matrix';
+import { getMxIdLocalPart, mxcUrlToHttp } from '$utils/matrix';
 import { useSableCosmetics } from '$hooks/useSableCosmetics';
 import { useAtomValue } from 'jotai';
 import { nicknamesAtom } from '$state/nicknames';
@@ -31,7 +31,7 @@ export const MemberTile = as<'button', MemberTileProps>(
 
     const avatarMxcUrl = member.getMxcAvatarUrl() ?? mx.getUser(member.userId)?.avatarUrl;
     const avatarUrl = avatarMxcUrl
-      ? mx.mxcUrlToHttp(avatarMxcUrl, 100, 100, 'crop', undefined, false, useAuthentication)
+      ? mxcUrlToHttp(mx, avatarMxcUrl, useAuthentication, 100, 100, 'crop', false)
       : undefined;
 
     // Sable username color and fonts

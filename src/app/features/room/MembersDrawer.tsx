@@ -34,7 +34,7 @@ import { useAsyncSearch } from '$hooks/useAsyncSearch';
 import { useDebounce } from '$hooks/useDebounce';
 import { TypingIndicator } from '$components/typing-indicator';
 import { getMemberDisplayName, getMemberSearchStr } from '$utils/room';
-import { getMxIdLocalPart } from '$utils/matrix';
+import { getMxIdLocalPart, mxcUrlToHttp } from '$utils/matrix';
 import { useSetSetting, useSetting } from '$state/hooks/settings';
 import { settingsAtom } from '$state/settings';
 import { useAtomValue } from 'jotai';
@@ -132,7 +132,7 @@ function MemberItem({
   // Increased the request size to 128x128 to maintain quality for the larger avatar
   const avatarMxcUrl = member.getMxcAvatarUrl();
   const avatarUrl = avatarMxcUrl
-    ? mx.mxcUrlToHttp(avatarMxcUrl, 128, 128, 'crop', undefined, false, useAuthentication)
+    ? mxcUrlToHttp(mx, avatarMxcUrl, useAuthentication, 128, 128, 'crop', false)
     : undefined;
 
   const presence = useUserPresence(member.userId);
