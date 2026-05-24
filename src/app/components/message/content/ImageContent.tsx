@@ -31,6 +31,7 @@ import { useMatrixClient } from '$hooks/useMatrixClient';
 import { bytesToSize } from '$utils/common';
 import { FALLBACK_MIMETYPE } from '$utils/mimeTypes';
 import { stopPropagation } from '$utils/keyboard';
+import { pushMediaDebugEntry } from '$utils/mediaDebug';
 import { decryptFile, downloadEncryptedMedia, mxcUrlToHttp } from '$utils/matrix';
 import { useMediaAuthentication } from '$hooks/useMediaAuthentication';
 import { ModalWide } from '$styles/Modal.css';
@@ -121,12 +122,30 @@ export const ImageContent = as<'div', ImageContentProps>(
 
     const [srcState, loadSrc] = useAsyncCallback(
       useCallback(async () => {
+        pushMediaDebugEntry('media.render', 'ImageContent resolving source', {
+          component: 'ImageContent',
+          rawUrl: url,
+          mimeType,
+          encrypted: Boolean(encInfo),
+          useAuthentication: Boolean(useAuthentication),
+          matrixThumbnailMaxEdge,
+        });
         if (url.startsWith('http')) return url;
 
         if (typeof matrixThumbnailMaxEdge === 'number' && matrixThumbnailMaxEdge > 0 && !encInfo) {
           const { tw, th } = thumbnailDimsForMaxEdge(matrixThumbnailMaxEdge, info?.w, info?.h);
           const thumbUrl = mxcUrlToHttp(mx, url, useAuthentication, tw, th, 'scale', false);
-          if (thumbUrl) return thumbUrl;
+          if (thumbUrl) {
+            pushMediaDebugEntry('media.render.result', 'ImageContent using thumbnail URL', {
+              component: 'ImageContent',
+              rawUrl: url,
+              resolvedUrl: thumbUrl,
+              width: tw,
+              height: th,
+              encrypted: false,
+            });
+            return thumbUrl;
+          }
         }
 
         const mediaUrl = mxcUrlToHttp(mx, url, useAuthentication);
@@ -135,8 +154,22 @@ export const ImageContent = as<'div', ImageContentProps>(
           const fileContent = await downloadEncryptedMedia(mediaUrl, (encBuf) =>
             decryptFile(encBuf, mimeType ?? FALLBACK_MIMETYPE, encInfo)
           );
-          return URL.createObjectURL(fileContent);
+          const objectUrl = URL.createObjectURL(fileContent);
+          pushMediaDebugEntry('media.render.result', 'ImageContent using encrypted object URL', {
+            component: 'ImageContent',
+            rawUrl: url,
+            resolvedUrl: mediaUrl,
+            objectUrl,
+            encrypted: true,
+          });
+          return objectUrl;
         }
+        pushMediaDebugEntry('media.render.result', 'ImageContent using direct media URL', {
+          component: 'ImageContent',
+          rawUrl: url,
+          resolvedUrl: mediaUrl,
+          encrypted: false,
+        });
         return mediaUrl;
       }, [mx, url, useAuthentication, mimeType, encInfo, matrixThumbnailMaxEdge, info?.w, info?.h])
     );

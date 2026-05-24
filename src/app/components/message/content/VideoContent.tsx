@@ -23,6 +23,7 @@ import type { IThumbnailContent, IVideoInfo } from '$types/matrix/common';
 import { useMatrixClient } from '$hooks/useMatrixClient';
 import { AsyncStatus, useAsyncCallback } from '$hooks/useAsyncCallback';
 import { bytesToSize, millisecondsToMinutesAndSeconds } from '$utils/common';
+import { pushMediaDebugEntry } from '$utils/mediaDebug';
 import { decryptFile, downloadEncryptedMedia, downloadMedia, mxcUrlToHttp } from '$utils/matrix';
 import { useMediaAuthentication } from '$hooks/useMediaAuthentication';
 import { validBlurHash } from '$utils/blurHash';
@@ -78,6 +79,13 @@ export const VideoContent = as<'div', VideoContentProps>(
 
     const [srcState, loadSrc] = useAsyncCallback(
       useCallback(async () => {
+        pushMediaDebugEntry('media.render', 'VideoContent resolving source', {
+          component: 'VideoContent',
+          rawUrl: url,
+          mimeType,
+          encrypted: Boolean(encInfo),
+          useAuthentication: Boolean(useAuthentication),
+        });
         if (url.startsWith('http')) return url;
 
         const mediaUrl = mxcUrlToHttp(mx, url, useAuthentication);
@@ -87,7 +95,15 @@ export const VideoContent = as<'div', VideoContentProps>(
               decryptFile(encBuf, mimeType, encInfo)
             )
           : await downloadMedia(mediaUrl);
-        return URL.createObjectURL(fileContent);
+        const objectUrl = URL.createObjectURL(fileContent);
+        pushMediaDebugEntry('media.render.result', 'VideoContent using object URL', {
+          component: 'VideoContent',
+          rawUrl: url,
+          resolvedUrl: mediaUrl,
+          objectUrl,
+          encrypted: Boolean(encInfo),
+        });
+        return objectUrl;
       }, [mx, url, useAuthentication, mimeType, encInfo])
     );
 

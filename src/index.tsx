@@ -21,6 +21,7 @@ import { pushSessionToSW } from './sw-session';
 import type { Sessions } from './app/state/sessions';
 import { getFallbackSession, MATRIX_SESSIONS_KEY, ACTIVE_SESSION_KEY } from './app/state/sessions';
 import { createLogger } from './app/utils/debug';
+import { pushMediaDebugEntry } from './app/utils/mediaDebug';
 import { getLocalStorageItem } from './app/state/utils/atomWithLocalStorage';
 import { installConsolePasteScamWarning } from './app/utils/consolePasteScamWarning';
 
@@ -48,6 +49,9 @@ const showUpdateAvailablePrompt = (registration: ServiceWorkerRegistration) => {
 };
 
 if ('serviceWorker' in navigator) {
+  pushMediaDebugEntry('service-worker', 'Service worker detected in navigator', {
+    controller: Boolean(navigator.serviceWorker.controller),
+  });
   const isProduction = import.meta.env.MODE === 'production';
   const swUrl = isProduction
     ? `${trimTrailingSlash(import.meta.env.BASE_URL)}/sw.js`
@@ -58,20 +62,40 @@ if ('serviceWorker' in navigator) {
     swRegisterOptions.type = 'module';
   }
 
-  navigator.serviceWorker.register(swUrl, swRegisterOptions).then((registration) => {
-    registration.addEventListener('updatefound', () => {
-      const installingWorker = registration.installing;
-      if (installingWorker) {
-        installingWorker.addEventListener('statechange', () => {
-          if (installingWorker.state === 'installed') {
-            if (navigator.serviceWorker.controller) {
-              showUpdateAvailablePrompt(registration);
-            }
-          }
+  navigator.serviceWorker
+    .register(swUrl, swRegisterOptions)
+    .then((registration) => {
+      pushMediaDebugEntry('service-worker', 'Service worker registered', {
+        swUrl,
+        scope: registration.scope,
+        controller: Boolean(navigator.serviceWorker.controller),
+      });
+      registration.addEventListener('updatefound', () => {
+        const installingWorker = registration.installing;
+        pushMediaDebugEntry('service-worker', 'Service worker update found', {
+          hasInstallingWorker: Boolean(installingWorker),
         });
-      }
+        if (installingWorker) {
+          installingWorker.addEventListener('statechange', () => {
+            pushMediaDebugEntry('service-worker', 'Service worker state changed', {
+              state: installingWorker.state,
+              controller: Boolean(navigator.serviceWorker.controller),
+            });
+            if (installingWorker.state === 'installed') {
+              if (navigator.serviceWorker.controller) {
+                showUpdateAvailablePrompt(registration);
+              }
+            }
+          });
+        }
+      });
+    })
+    .catch((err) => {
+      pushMediaDebugEntry('service-worker', 'Service worker registration failed', {
+        swUrl,
+        error: err instanceof Error ? err.message : String(err),
+      });
     });
-  });
 
   const sendSessionToSW = () => {
     // Use the active session from the new multi-session store, fall back to legacy
@@ -79,6 +103,12 @@ if ('serviceWorker' in navigator) {
     const activeId = getLocalStorageItem<string | undefined>(ACTIVE_SESSION_KEY, undefined);
     const active =
       sessions.find((s) => s.userId === activeId) ?? sessions[0] ?? getFallbackSession();
+    pushMediaDebugEntry('service-worker', 'Sending session to service worker', {
+      hasBaseUrl: Boolean(active?.baseUrl),
+      hasAccessToken: Boolean(active?.accessToken),
+      userId: active?.userId,
+      controller: Boolean(navigator.serviceWorker.controller),
+    });
     pushSessionToSW(active?.baseUrl, active?.accessToken, active?.userId);
   };
 
@@ -87,10 +117,25 @@ if ('serviceWorker' in navigator) {
     .then(sendSessionToSW)
     .catch((err) => {
       log.warn('SW registration failed:', err);
+      pushMediaDebugEntry('service-worker', 'Service worker registration for session sync failed', {
+        swUrl,
+        error: err instanceof Error ? err.message : String(err),
+      });
     });
-  navigator.serviceWorker.ready.then(sendSessionToSW).catch((err) => {
-    log.warn('SW ready failed:', err);
-  });
+  navigator.serviceWorker.ready
+    .then((registration) => {
+      pushMediaDebugEntry('service-worker', 'Service worker ready', {
+        scope: registration.scope,
+        controller: Boolean(navigator.serviceWorker.controller),
+      });
+      sendSessionToSW();
+    })
+    .catch((err) => {
+      log.warn('SW ready failed:', err);
+      pushMediaDebugEntry('service-worker', 'Service worker ready failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
 
   navigator.serviceWorker.addEventListener('message', (ev) => {
     const { data } = ev;
@@ -98,6 +143,9 @@ if ('serviceWorker' in navigator) {
     const { type } = data as { type?: unknown };
 
     if (type === 'requestSession') {
+      pushMediaDebugEntry('service-worker', 'Service worker requested session', {
+        hasSource: Boolean(ev.source),
+      });
       sendSessionToSW();
     }
 

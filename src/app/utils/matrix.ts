@@ -19,6 +19,7 @@ import * as Sentry from '@sentry/react';
 import { getEventReactions, getStateEvent } from './room';
 import { getReactionContent } from './messageReaction';
 import { matchMxId, validMxId } from './mxIdHelper';
+import { pushMediaDebugEntry } from './mediaDebug';
 
 const DOMAIN_REGEX = /\b(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}\b/;
 
@@ -321,9 +322,10 @@ export const mxcUrlToHttp = (
   height?: number,
   resizeMethod?: string,
   allowDirectLinks?: boolean
-): string | null =>
-  mx.mxcUrlToHttp(
-    mxcUrl.replace(/^["']|["']$/g, ''),
+): string | null => {
+  const normalizedUrl = mxcUrl.replace(/^["']|["']$/g, '');
+  const resolvedUrl = mx.mxcUrlToHttp(
+    normalizedUrl,
     width,
     height,
     resizeMethod,
@@ -331,10 +333,32 @@ export const mxcUrlToHttp = (
     undefined,
     useAuthentication
   );
+  pushMediaDebugEntry('mxc.resolve', 'Resolved media URL', {
+    input: mxcUrl,
+    normalizedUrl,
+    isMxc: normalizedUrl.startsWith('mxc://'),
+    useAuthentication: Boolean(useAuthentication),
+    width,
+    height,
+    resizeMethod,
+    allowDirectLinks: Boolean(allowDirectLinks),
+    resolvedUrl,
+  });
+  return resolvedUrl;
+};
 
 export const downloadMedia = async (src: string): Promise<Blob> => {
   // this request is authenticated by service worker
+  pushMediaDebugEntry('media.fetch', 'Fetching media', {
+    src,
+  });
   const res = await fetch(src, { method: 'GET' });
+  pushMediaDebugEntry('media.fetch.result', 'Media fetch completed', {
+    src,
+    ok: res.ok,
+    status: res.status,
+    contentType: res.headers.get('content-type') ?? undefined,
+  });
   const blob = await res.blob();
   return blob;
 };
@@ -343,10 +367,22 @@ export const downloadEncryptedMedia = async (
   src: string,
   decryptContent: (buf: ArrayBuffer) => Promise<Blob>
 ): Promise<Blob> => {
-  const encryptedContent = await downloadMedia(src);
-  const decryptedContent = await decryptContent(await encryptedContent.arrayBuffer());
-
-  return decryptedContent;
+  try {
+    const encryptedContent = await downloadMedia(src);
+    const decryptedContent = await decryptContent(await encryptedContent.arrayBuffer());
+    pushMediaDebugEntry('media.fetch.result', 'Encrypted media decrypted', {
+      src,
+      size: decryptedContent.size,
+      type: decryptedContent.type,
+    });
+    return decryptedContent;
+  } catch (error) {
+    pushMediaDebugEntry('media.fetch.error', 'Encrypted media fetch/decrypt failed', {
+      src,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
 };
 
 const sleepForMs = (ms: number) =>

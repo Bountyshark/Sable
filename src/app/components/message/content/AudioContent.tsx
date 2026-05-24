@@ -17,6 +17,7 @@ import {
 } from '$hooks/media';
 import { useThrottle } from '$hooks/useThrottle';
 import { secondsToMinutesAndSeconds } from '$utils/common';
+import { pushMediaDebugEntry } from '$utils/mediaDebug';
 import { decryptFile, downloadEncryptedMedia, downloadMedia, mxcUrlToHttp } from '$utils/matrix';
 import { useMediaAuthentication } from '$hooks/useMediaAuthentication';
 import { MEDIA_VOLUME_KEY } from '$components/media';
@@ -51,12 +52,27 @@ export function AudioContent({
 
   const [srcState, loadSrc] = useAsyncCallback(
     useCallback(async () => {
+      pushMediaDebugEntry('media.render', 'AudioContent resolving source', {
+        component: 'AudioContent',
+        rawUrl: url,
+        mimeType,
+        encrypted: Boolean(encInfo),
+        useAuthentication: Boolean(useAuthentication),
+      });
       const mediaUrl = mxcUrlToHttp(mx, url, useAuthentication);
       if (!mediaUrl) throw new Error('Invalid media URL');
       const fileContent = encInfo
         ? await downloadEncryptedMedia(mediaUrl, (encBuf) => decryptFile(encBuf, mimeType, encInfo))
         : await downloadMedia(mediaUrl);
-      return URL.createObjectURL(fileContent);
+      const objectUrl = URL.createObjectURL(fileContent);
+      pushMediaDebugEntry('media.render.result', 'AudioContent using object URL', {
+        component: 'AudioContent',
+        rawUrl: url,
+        resolvedUrl: mediaUrl,
+        objectUrl,
+        encrypted: Boolean(encInfo),
+      });
+      return objectUrl;
     }, [mx, url, useAuthentication, mimeType, encInfo])
   );
 

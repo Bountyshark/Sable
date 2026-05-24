@@ -11,6 +11,7 @@ import Linkify from 'linkify-react';
 import type { ChildNode } from 'domhandler';
 
 import * as css from '$styles/CustomHtml.css';
+import { pushMediaDebugEntry } from '$utils/mediaDebug';
 import {
   getCanonicalAliasRoomId,
   getMxIdLocalPart,
@@ -800,6 +801,15 @@ export const getReactCustomHtmlParser = (
           const htmlSrc = mxcUrlToHttp(mx, props.src, params.useAuthentication) ?? undefined;
           const fallbackLabel = props.alt || props.title || '[media]';
           const failedToResolveMxc = props.src.startsWith('mxc://') && !htmlSrc;
+          pushMediaDebugEntry('media.render', 'HTML parser resolving image source', {
+            component: 'react-custom-html-parser',
+            rawUrl: props.src,
+            resolvedUrl: htmlSrc,
+            useAuthentication: Boolean(params.useAuthentication),
+            failedToResolveMxc,
+            alt: props.alt,
+            title: props.title,
+          });
 
           // Non-mxc images were already converted to <a> links by the sanitiser,
           // but handle the edge case defensively here too.
