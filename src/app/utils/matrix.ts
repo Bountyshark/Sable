@@ -347,12 +347,23 @@ export const mxcUrlToHttp = (
   return resolvedUrl;
 };
 
-export const downloadMedia = async (src: string): Promise<Blob> => {
-  // this request is authenticated by service worker
+export const authenticatedMediaFetch = async (
+  src: string,
+  accessToken?: string | null
+): Promise<Response> => {
+  const headers: HeadersInit = {};
+  if (accessToken) {
+    headers.Authorization = `Bearer ${accessToken}`;
+  }
+  return fetch(src, { method: 'GET', headers });
+};
+
+export const downloadMedia = async (src: string, accessToken?: string | null): Promise<Blob> => {
+  // this request is authenticated by service worker or access token directly
   pushMediaDebugEntry('media.fetch', 'Fetching media', {
     src,
   });
-  const res = await fetch(src, { method: 'GET' });
+  const res = await authenticatedMediaFetch(src, accessToken);
   pushMediaDebugEntry('media.fetch.result', 'Media fetch completed', {
     src,
     ok: res.ok,
@@ -365,17 +376,12 @@ export const downloadMedia = async (src: string): Promise<Blob> => {
 
 export const downloadEncryptedMedia = async (
   src: string,
-  decryptContent: (buf: ArrayBuffer) => Promise<Blob>
+  decryptContent: (buf: ArrayBuffer) => Promise<Blob>,
+  accessToken?: string | null
 ): Promise<Blob> => {
   try {
-    const encryptedContent = await downloadMedia(src);
-    const decryptedContent = await decryptContent(await encryptedContent.arrayBuffer());
-    pushMediaDebugEntry('media.fetch.result', 'Encrypted media decrypted', {
-      src,
-      size: decryptedContent.size,
-      type: decryptedContent.type,
-    });
-    return decryptedContent;
+    const encryptedContent = await downloadMedia(src, accessToken);
+    return decryptContent(await encryptedContent.arrayBuffer());
   } catch (error) {
     pushMediaDebugEntry('media.fetch.error', 'Encrypted media fetch/decrypt failed', {
       src,

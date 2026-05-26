@@ -9,21 +9,15 @@ import '@fontsource/space-mono/400-italic.css';
 import '@fontsource/space-mono/700-italic.css';
 import 'folds/dist/style.css';
 import { configClass, varsClass } from 'folds';
-import { trimTrailingSlash } from './app/utils/common';
 import App from './app/pages/App';
 import './app/i18n';
-
 import './index.css';
 import './app/styles/themes.css';
 import './app/styles/overrides/General.css';
 import './app/styles/overrides/Privacy.css';
-import { pushSessionToSW } from './sw-session';
-import type { Sessions } from './app/state/sessions';
-import { getFallbackSession, MATRIX_SESSIONS_KEY, ACTIVE_SESSION_KEY } from './app/state/sessions';
 import { createLogger } from './app/utils/debug';
-import { pushMediaDebugEntry } from './app/utils/mediaDebug';
-import { getLocalStorageItem } from './app/state/utils/atomWithLocalStorage';
 import { installConsolePasteScamWarning } from './app/utils/consolePasteScamWarning';
+import { registerAppServiceWorker } from './serviceWorkerBootstrap';
 
 enableMapSet();
 installConsolePasteScamWarning();
@@ -31,140 +25,7 @@ const log = createLogger('index');
 
 document.body.classList.add(configClass, varsClass);
 
-const showUpdateAvailablePrompt = (registration: ServiceWorkerRegistration) => {
-  const DONT_SHOW_PROMPT_KEY = 'cinny_dont_show_sw_update_prompt';
-  const userPreference = localStorage.getItem(DONT_SHOW_PROMPT_KEY);
-
-  if (userPreference === 'true') {
-    return;
-  }
-
-  if (window.confirm('A new version of the app is available. Refresh to update?')) {
-    if (registration.waiting) {
-      // oxlint-disable-next-line unicorn/require-post-message-target-origin
-      registration.waiting.postMessage({ type: 'SKIP_WAITING_AND_CLAIM' });
-    }
-    window.location.reload();
-  }
-};
-
-if ('serviceWorker' in navigator) {
-  pushMediaDebugEntry('service-worker', 'Service worker detected in navigator', {
-    controller: Boolean(navigator.serviceWorker.controller),
-  });
-  const isProduction = import.meta.env.MODE === 'production';
-  const swUrl = isProduction
-    ? `${trimTrailingSlash(import.meta.env.BASE_URL)}/sw.js`
-    : `/dev-sw.js?dev-sw`;
-
-  const swRegisterOptions: RegistrationOptions = {};
-  if (!isProduction) {
-    swRegisterOptions.type = 'module';
-  }
-
-  navigator.serviceWorker
-    .register(swUrl, swRegisterOptions)
-    .then((registration) => {
-      pushMediaDebugEntry('service-worker', 'Service worker registered', {
-        swUrl,
-        scope: registration.scope,
-        controller: Boolean(navigator.serviceWorker.controller),
-      });
-      registration.addEventListener('updatefound', () => {
-        const installingWorker = registration.installing;
-        pushMediaDebugEntry('service-worker', 'Service worker update found', {
-          hasInstallingWorker: Boolean(installingWorker),
-        });
-        if (installingWorker) {
-          installingWorker.addEventListener('statechange', () => {
-            pushMediaDebugEntry('service-worker', 'Service worker state changed', {
-              state: installingWorker.state,
-              controller: Boolean(navigator.serviceWorker.controller),
-            });
-            if (installingWorker.state === 'installed') {
-              if (navigator.serviceWorker.controller) {
-                showUpdateAvailablePrompt(registration);
-              }
-            }
-          });
-        }
-      });
-    })
-    .catch((err) => {
-      pushMediaDebugEntry('service-worker', 'Service worker registration failed', {
-        swUrl,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    });
-
-  const sendSessionToSW = () => {
-    // Use the active session from the new multi-session store, fall back to legacy
-    const sessions = getLocalStorageItem<Sessions>(MATRIX_SESSIONS_KEY, []);
-    const activeId = getLocalStorageItem<string | undefined>(ACTIVE_SESSION_KEY, undefined);
-    const active =
-      sessions.find((s) => s.userId === activeId) ?? sessions[0] ?? getFallbackSession();
-    pushMediaDebugEntry('service-worker', 'Sending session to service worker', {
-      hasBaseUrl: Boolean(active?.baseUrl),
-      hasAccessToken: Boolean(active?.accessToken),
-      userId: active?.userId,
-      controller: Boolean(navigator.serviceWorker.controller),
-    });
-    pushSessionToSW(active?.baseUrl, active?.accessToken, active?.userId);
-  };
-
-  navigator.serviceWorker
-    .register(swUrl)
-    .then(sendSessionToSW)
-    .catch((err) => {
-      log.warn('SW registration failed:', err);
-      pushMediaDebugEntry('service-worker', 'Service worker registration for session sync failed', {
-        swUrl,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    });
-  navigator.serviceWorker.ready
-    .then((registration) => {
-      pushMediaDebugEntry('service-worker', 'Service worker ready', {
-        scope: registration.scope,
-        controller: Boolean(navigator.serviceWorker.controller),
-      });
-      sendSessionToSW();
-    })
-    .catch((err) => {
-      log.warn('SW ready failed:', err);
-      pushMediaDebugEntry('service-worker', 'Service worker ready failed', {
-        error: err instanceof Error ? err.message : String(err),
-      });
-    });
-
-  navigator.serviceWorker.addEventListener('message', (ev) => {
-    const { data } = ev;
-    if (!data || typeof data !== 'object') return;
-    const { type } = data as { type?: unknown };
-
-    if (type === 'requestSession') {
-      pushMediaDebugEntry('service-worker', 'Service worker requested session', {
-        hasSource: Boolean(ev.source),
-      });
-      sendSessionToSW();
-    }
-
-    if (data.type === 'token' && data.id) {
-      const token = localStorage.getItem('cinny_access_token') ?? undefined;
-      ev.source?.postMessage({
-        replyTo: data.id,
-        payload: token,
-      });
-    } else if (data.type === 'openRoom' && data.id) {
-      /* Example:
-      event.source.postMessage({
-        replyTo: event.data.id,
-        payload: success?,
-      });
-      */
-    }
-  });
-}
+registerAppServiceWorker();
 
 const injectIOSMetaTags = () => {
   const metaTags = [
@@ -194,7 +55,6 @@ const CHUNK_RETRY_KEY = 'cinny_chunk_retry_count';
 const MAX_CHUNK_RETRIES = 2;
 
 window.addEventListener('error', (event) => {
-  // Check if this is a chunk loading error
   const isChunkLoadError =
     event.message?.includes('dynamically imported module') ||
     event.message?.includes('Failed to fetch') ||
@@ -204,22 +64,17 @@ window.addEventListener('error', (event) => {
     const retryCount = parseInt(sessionStorage.getItem(CHUNK_RETRY_KEY) ?? '0', 10);
 
     if (retryCount < MAX_CHUNK_RETRIES) {
-      // Increment retry count and reload
       sessionStorage.setItem(CHUNK_RETRY_KEY, String(retryCount + 1));
       log.warn(`Chunk load failed, reloading (attempt ${retryCount + 1}/${MAX_CHUNK_RETRIES})`);
       window.location.reload();
-
-      // Prevent default error handling since we're reloading
       event.preventDefault();
     } else {
-      // Max retries exceeded, clear counter and let error bubble up
       sessionStorage.removeItem(CHUNK_RETRY_KEY);
       log.error('Chunk load failed after max retries, showing error');
     }
   }
 });
 
-// Clear chunk retry counter on successful page load
 window.addEventListener('load', () => {
   sessionStorage.removeItem(CHUNK_RETRY_KEY);
 });
